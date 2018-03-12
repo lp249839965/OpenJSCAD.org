@@ -18,11 +18,18 @@ function changedFiles (memFs, files) {
  * @return the main file, or undefined
  */
 function findMainFile ({memFs, memFsTotal}, files) {
+  const validEntries = ['index.js', 'index.jscad', 'main.js', 'main.jscad']
   let mainFile
   if (memFsTotal > 1) {
-    for (let filename in memFs) {
-      if (memFs[filename].name.match(/main.(jscad|js)$/)) {
-        mainFile = memFs[filename]
+    console.log('files', memFs, files)
+
+    for (let i = 0; i < files.length; i++) {
+      const fileData = files[i]
+      let filename = fileData.name
+      console.log('filename', fileData)
+      if (validEntries.includes(fileData.fullpath))// .match(/(main|index).(jscad|js)$/))
+      {
+        mainFile = fileData//memFs[filename]
         break
       }
     }

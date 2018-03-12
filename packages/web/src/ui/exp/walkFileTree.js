@@ -1,7 +1,9 @@
 const { conversionFormats } = require('@jscad/core/io/formats')
-const {findMainFile, changedFiles} = require('./helpers')
 
 function flatten (array) {
+  if (array === undefined || array === null) {
+    return []
+  }
   return [].concat(...array)
 }
 
@@ -12,7 +14,7 @@ const readFileAsync = function (file, fileMeta) {
   return new Promise(function (resolve, reject) {
     reader.readAsArrayBuffer(file)
     // remove rootfolder since all files are within it
-    const fullpath = fileMeta && fileMeta.fullPath ? fileMeta.fullPath.split('/').slice(2).join('/') : ''
+    const fullPath = fileMeta && fileMeta.fullPath ? fileMeta.fullPath.split('/').slice(2).join('/') : ''
 
     // convert binary to text
     function convert (buffer) {
@@ -27,7 +29,7 @@ const readFileAsync = function (file, fileMeta) {
 
     reader.onloadend = event => {
       event.target.readyState === FileReader.DONE
-        ? resolve({name: file.name, fullpath: fullpath, source: convert(event.target.result)})
+        ? resolve({name: file.name, fullPath: fullPath, source: convert(event.target.result)})
         : reject(new Error('Failed to load file'))
     }
   })
@@ -36,7 +38,7 @@ const readFileAsync = function (file, fileMeta) {
 function isSupportedFormat (file) {
   var e = file.name.toLowerCase().match(/\.(\w+)$/i)
   e = RegExp.$1
-  return conversionFormats.indexOf(e) >= 0
+  return conversionFormats.concat(['json']).indexOf(e) >= 0
   // NOTE: was incrementing memFsTotal++ ONLY if format is valid, not needed anymore as far as I know
 }
 
@@ -53,10 +55,13 @@ function processItems (items) {
   let results = pseudoArraytoArray(items)
     .filter(x => x !== null && x !== undefined)// skip empty items
     .reduce((result, item) => {
+      // console.log('result', result, 'item', item)
       if (item.isFile) {
         result.push(processFile(item))
       } else if (item.isDirectory) {
-        result.push(processDirectory(item))
+        if (item.name !== '.git') { // ignore .git folder
+          result.push(processDirectory(item))
+        }
       } else if (item instanceof File) {
         const file = isSupportedFormat(item) ? readFileAsync(item, {fullPath: undefined}) : undefined
         if (!file) {
@@ -67,8 +72,12 @@ function processItems (items) {
       return result
     }, [])
 
+  // const filesToIgnore()
+  // .DS_Store, .git
   // console.warn(`ignoring Unsuported file ${fileData.name}`): this is for cases like .DSSTORE etc on mac
-  return Promise.all(results).then(x => x.filter(x => x !== null && x !== undefined)).then(flatten)
+  return Promise.all(results)
+    .then(x => x.filter(x => x !== null && x !== undefined))// .then(flatten)
+    // .filter()
 }
 
 function processFile (fileItem) {
@@ -81,12 +90,26 @@ function processFile (fileItem) {
 
 function processDirectory (directory) {
   const reader = directory.createReader()
-
   return new Promise((resolve, reject) => {
     reader.readEntries(function (entries) {
       entries.length ? processItems(entries).then(resolve) : resolve(null)
     }, reject)
-  }).then(flatten)
+  })
+  .then(flatten)
+  .then(function (children) {
+    children = children.map(child => {
+      /*if(directory.name === 'node_modules'){
+        
+      }*/
+      if (!child.fullPath.startsWith('/'))// && !child.fullPath.startsWith('@')) {
+       { child.fullPath = directory.fullPath + '/' + child.fullPath
+        // return Object.assign({})
+      }
+      
+      return child
+    })
+    return {children, fullPath: directory.fullPath, name: directory.name}
+  })
 }
 
 // this is the core of the drag'n'drop:

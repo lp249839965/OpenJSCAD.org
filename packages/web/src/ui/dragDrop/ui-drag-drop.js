@@ -44,7 +44,7 @@ function setupDragDrop (me, {memFs, gProcessor, gEditor}) {
   var fileInput = document.getElementById('files-input')
 
   // Check for the various File API support.
-  if (window.File && window.FileReader && window.FileList) {
+  /*if (window.File && window.FileReader && window.FileList) {
     // All the File APIs are supported.
     if ('createTouch' in document) {
       // This device is TOUCH sensitive so assume MOBILE, i.e. no drag and drop
@@ -56,14 +56,14 @@ function setupDragDrop (me, {memFs, gProcessor, gEditor}) {
     }
   } else {
     throw new Error('Error: Your browser does not support the HTML File API')
-  }
-  dropZone.addEventListener('dragover', function (evt) {
+  }*/
+  /*dropZone.addEventListener('dragover', function (evt) {
     evt.stopPropagation()
     evt.preventDefault()
     evt.dataTransfer.dropEffect = 'copy'
   }, false)
   dropZone.addEventListener('drop', handleFileSelect, false)
-  fileInput.addEventListener('change', handleInputFiles, false)
+  fileInput.addEventListener('change', handleInputFiles, false)*/
 
   // ---------
   function reloadAllFiles () {

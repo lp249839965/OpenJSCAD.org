@@ -1,6 +1,7 @@
 // == OpenJSCAD.org, Copyright (c) 2013-2016, Licensed under MIT License
 const { setUpEditor } = require('./editor')
-const { setupDragDrop } = require('./dragDrop/ui-drag-drop') // toggleAutoReload
+const { setupDragDrop } = require('./dragDrop/ui-drag-drop')
+const dragAndDropSource = require('./sideEffects/dragDrop')
 
 const { detectBrowser } = require('./detectBrowser')
 const { getUrlParams } = require('./urlHelpers')
@@ -57,15 +58,15 @@ function init () {
   // FIXME: temporary hack
 
 // major DIVs expected
-  let about = document.getElementById('about');
-  let header = document.getElementById('header');
-  let menu = document.getElementById('menu');
-  let tail = document.getElementById('tail');
-  let footer = document.getElementById('footer');
-  let editFrame = document.getElementById('editFrame');
+  let about = document.getElementById('about')
+  let header = document.getElementById('header')
+  let menu = document.getElementById('menu')
+  let tail = document.getElementById('tail')
+  let footer = document.getElementById('footer')
+  let editFrame = document.getElementById('editFrame')
 
-  //createOptions()
-  //getOptions()
+  // createOptions()
+  // getOptions()
 
   let options = document.getElementById('options')
   let optionsTitle = document.getElementById('optionsTitle')
@@ -96,7 +97,7 @@ function init () {
       }
     }, 3000) // -- hide slide-menu after 3secs
 
-    let examples = document.getElementById('examples');
+    let examples = document.getElementById('examples')
     if (examples) {
       createExamples(me)
       loadInitialExample(me, {memFs, gProcessor, gEditor, proxyUrl})
@@ -132,7 +133,7 @@ function init () {
       }
       var list = examples.querySelectorAll('.example')
       for (var i = 0; i < list.length; i++) {
-          list[i].addEventListener('click', onLoadExampleClicked)
+        list[i].addEventListener('click', onLoadExampleClicked)
       }
     }
 
@@ -175,7 +176,7 @@ function init () {
 
   // -- Options
     // FIXME: these don't exist ??? where are options handled in the first place ?
-    /*optionsTitle.addEventListener('click', function (e) {
+    /* optionsTitle.addEventListener('click', function (e) {
       setElementHeight(options, 'auto')
       editor.style.display = 'inline'
       setElementHeight(examples, '0px')
@@ -194,7 +195,7 @@ function init () {
       } else {
         plate.style.display = 'none'
       }
-    })*/
+    }) */
 
   // about/ licence section
   if (about) {
@@ -238,6 +239,157 @@ function init () {
     const footerContent = `OpenJSCAD.org ${version}, MIT License, get your own copy/clone/fork from <a target=_blank href="https://github.com/Spiritdude/OpenJSCAD.org">GitHub: OpenJSCAD</a>`
     document.getElementById('footer').innerHTML = footerContent
   }
+
+  //
+  const {walkFileTree} = require('./exp/walkFileTree')
+  const isCommonJsModule = require('@jscad/core/code-loading/isCommonJsModule')
+  const getFileExtensionFromString = input => (input.substring(input.lastIndexOf('.') + 1)).toLowerCase()
+
+  const makeFakeFs = (filesAndFolders) => {
+    const findMatch = (path, inputs = filesAndFolders) => {
+      let result
+      for (let i = 0; i < inputs.length; i++) {
+        const entry = inputs[i]
+        if (path === entry.fullPath || ('/' + path) === entry.fullPath) {
+          return entry
+        }
+        if (entry.children) {
+          const res = findMatch(path, entry.children)
+          if (res !== undefined) {
+            return res
+          }
+        }
+      }
+      return undefined
+      // return filesAndFolders
+    }
+    const fakeFs = {
+      statSync: path => {
+        const entry = findMatch(path)
+        return {
+          isFile: _ => {
+            return entry && ('source' in entry && !('children' in entry))
+          },
+          isDirectory: _ => {
+            return entry && (!('source' in entry) && ('children' in entry))
+          }
+        }
+      },
+      existsSync: (path) => {
+        const entry = findMatch(path)
+        console.log('does ', path, 'exist ?', entry !== undefined)
+        return entry !== undefined
+      },
+      readdirSync: (path) => {
+        const entry = findMatch(path)
+        return entry.children.map(x => x.name)
+         // filesAndFolders
+      }
+    }
+    return fakeFs
+  }
+  const makeFakeRequire = (options, filesAndFolders) => {
+    let modules = {
+      '@jscad/api': {
+        exports: require('@jscad/csg/api')// {cube: () => console.log('you asked for a cube')}
+      }
+    }
+    const registerNodeModules = (inputs, isInNodeModules = false, isScoped = false) => {
+      for (let i = 0; i < inputs.length; i++) {
+        const entry = inputs[i]
+        if (isInNodeModules) {
+          filesAndFolders[entry.name] = entry
+        }
+        if (entry.children && (isInNodeModules === false || entry.name.startsWith('@'))) {
+          if (entry.name === 'node_modules') {
+            registerNodeModules(entry.children, true)
+          } else if (entry.name.startsWith('@')) {
+            registerNodeModules(entry.children, true, true)
+          } else {
+            registerNodeModules(entry.children)
+          }
+          console.log('here')
+          // filesAndFolders[]
+        }
+      }
+    }
+    registerNodeModules(filesAndFolders)
+
+    const findMatch = (path, inputs = filesAndFolders) => {
+      for (let i = 0; i < inputs.length; i++) {
+        const entry = inputs[i]
+        if (path === entry.fullPath || ('/' + path) === entry.fullPath) {
+          return entry
+        }
+        if (entry.children) {
+          const res = findMatch(path, entry.children)
+          if (res !== undefined) {
+            return res
+          }
+        }
+      }
+      return undefined
+    }
+    // const rootModule = new Function('require', 'module', script)
+
+    const _require = (curPath, reqPath) => {
+      const path = require('path')
+      if (curPath && reqPath.startsWith('.')) {
+        reqPath = path.resolve(path.dirname(curPath), reqPath)
+      }
+      const entry = findMatch(reqPath)
+      if (!entry) {
+        throw new Error(`No file ${reqPath} found`)
+      }
+      const ext = getFileExtensionFromString(entry.name)
+      let result
+      if (ext === 'json') {
+        result = JSON.parse(entry.source)
+        modules[entry.fullPath] = result
+      }
+      if (ext === 'jscad' || ext === 'js') {
+        const __module = new Function('require', 'module', entry.source)
+        const foo = __module(_require.bind(null, entry.fullPath), {exports: {}})
+        modules[entry.fullPath] = foo
+        result = foo
+      }
+
+      console.log('found entry', entry)
+      return result
+    }
+    return _require.bind(null, '') // (path)
+  }
+
+  const {getDesignEntryPoint} = require('./exp/requireDesignUtilsFs')
+  dragAndDropSource(document.getElementById('filedropzone'))
+    .flatMap(({data}) => {
+      return require('most').fromPromise(walkFileTree(data))
+    })
+    .forEach(filesAndFolders => {
+      console.log('dropped', filesAndFolders)
+      const paths = filesAndFolders.map(x => x.name)
+      const fakeFs = makeFakeFs(filesAndFolders)
+      const fakeRequire = makeFakeRequire({}, filesAndFolders)
+
+      const entryPoint = getDesignEntryPoint(fakeFs, fakeRequire, paths)
+      console.log('design entry point', entryPoint)
+
+      const rootModule = fakeRequire(entryPoint)
+      console.log('rootModule', rootModule)
+      // const areCommonJsModules =
+      // isCommonJsModule()
+      // setCurrentFile()
+      // updateDropZoneVisual(file, memFsTotal)
+      // parseFile
+
+      // if autoReload
+
+      /* walkFileTree(rootData).then(function (result) {
+        console.log('result', result)
+      }).catch(function(error){
+        console.log('error in reading data', error)
+      }) */
+    })
 }
 
 document.addEventListener('DOMContentLoaded', function (event) {
